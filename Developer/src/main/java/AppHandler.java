@@ -7,6 +7,7 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
+import com.google.api.client.json.JsonParser;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.gax.rpc.PermissionDeniedException;
 import com.google.api.services.gmail.Gmail;
@@ -20,6 +21,7 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.ByteArrayInputStream;
@@ -89,22 +91,14 @@ public class AppHandler {
     return credential;
   }
 
-  private static List<String> getLabelRules() throws IOException {
-    List<String> labelRules = new ArrayList<>();
-    
-    Scanner labelsIn = new Scanner(new File("labels"));
-    while (labelsIn.hasNextLine()) {
-      String left = labelsIn.nextLine();
-      String right = labelsIn.nextLine();
-      System.out.println(left + " -> " + right);
-      labelRules.add(left);
-      labelRules.add(right);
-    }
-    labelsIn.close();
-    return labelRules;
+  private static LabelRules buildLabelRules(List<Label> labels) throws IOException {
+    InputStream in = new FileInputStream(new File("labels.json"));
+    LabelRules rules = LabelRules.load(JSON_FACTORY, new InputStreamReader(in));
+    rules.loadLabelIds(labels);
+    return rules;
   }
 
-  private static Set<String> getAuthors(int id) throws IOException {
+  private static Set<String> getAuthors(int id, boolean keepAuthors) throws IOException {
     Scanner authorsIn = new Scanner(new File("authors/"+id));
     Set<String> authors = new HashSet<>();
     while (authorsIn.hasNextLine()) {
@@ -112,8 +106,10 @@ public class AppHandler {
     }
     authorsIn.close();
     FileWriter authorsOut = new FileWriter(new File("authors/"+id));
-    for (String s : authors) {
-      authorsOut.write(s+"\n");
+    if (keepAuthors) {
+      for (String s : authors) {
+        authorsOut.write(s+"\n");
+      }
     }
     authorsOut.close();
     return authors;
@@ -144,45 +140,40 @@ public class AppHandler {
     }
     System.out.println();
 
-    List<String> labelRules;
+    LabelRules labelRules = null;
     try {
-      labelRules = getLabelRules();
+      labelRules = buildLabelRules(labels);
     } catch (IOException e) {
+      System.out.println(e.toString());
+      System.out.println(e.getStackTrace());
       System.out.println("Label rules not found\nStopping program...");
-      new File("labels").createNewFile();
+      new File("labels.json").createNewFile();
+      System.out.println("Expected format of label rules:\n{\n    \"label_rules\": [\n        {\n            \"save_authors\": false,\n            \"marker\": \"dirty\",\n            \"destination\": \"kitchen sink\",\n            \"q\": \"label:kitchen counter\",\n            \"remove\": \"clean\"\n        },\n        {\n            \"save_authors\": false,\n            \"marker\": \"clean\",\n            \"destination\": \"kitchen cabinet\",\n            \"q\": \"label:kitchen sink\"\n        },\n        {\n            \"save_authors\": true,\n            \"marker\": \"scumbag\",\n            \"destination\": \"TRASH\",\n            \"q\": \"label:neighbor\"\n        }\n    ]\n}");
+      return;
+    } catch (RuntimeException e) {
+      System.out.println(e.getMessage());
       return;
     }
     System.out.println();
 
-    //Ids of labelRules
-    List<String> labelRuleIds = new ArrayList<>();
-    for (int i = 0; i<labelRules.size(); i++) {
-      boolean found = false;
-      for (Label label : labels) {
-        if (label.getName().equals(labelRules.get(i))) {
-          labelRuleIds.add(label.getId());
-          found = true;
-          System.out.println(labelRules.get(i) + " - " + label.getId());
-          break;
-        }
-      }
-      if (!found) {
-        System.out.println("Label id for "+labelRules.get(i)+" not found\nStopping program...");
-        return;
-      }
-    }
-    System.out.println();
-
     if (getNewAuthors) {
-      for (int i = 0; i<labelRuleIds.size()/2; i++) {
+      for (int i = 0; i<labelRules.size(); i++) {
         try (FileWriter writeAuthors = new FileWriter("authors/"+i, true)) {
-          String leftLabelId = labelRuleIds.get(2*i);
-          ListMessagesResponse response = service.users().messages().list(user).setMaxResults((long)50).setLabelIds(Collections.singletonList(leftLabelId)).execute();
-          List<Message> messages = response.getMessages();
-          if (messages==null) {
-            System.out.println("No authors found for "+labelRules.get(2*i));
+          if (labelRules.get(i).getMarker()==null) {
+            writeAuthors.close();
             continue;
           }
+          //get messages with marker, max 50
+          ListMessagesResponse response = service.users().messages().list(user).setMaxResults((long)50).setLabelIds(Collections.singletonList(
+            labelRules.get(i).getMarkerId()
+          )).execute();
+
+          List<Message> messages = response.getMessages();
+          if (messages==null) {
+            System.out.println("No authors found for "+labelRules.get(i));
+            continue;
+          }
+          //write authors found in messages to file
           for (Message m : messages) {
             String id = m.getId();
             System.out.print("Getting message "+id+" ... ");
@@ -201,10 +192,12 @@ public class AppHandler {
       System.out.println();
     }
 
+    //load authors from file
+    //also remove duplicate authors from file
     List<Set<String>> authorsPerRule = new ArrayList<>();
     try {
-      for (int i = 0; i<labelRules.size()/2; i++) {
-        authorsPerRule.add(getAuthors(i));
+      for (int i = 0; i<labelRules.size(); i++) {
+        authorsPerRule.add(getAuthors(i,labelRules.get(i).getKeepAuthors()));
         for (String s : authorsPerRule.get(i)) {
           System.out.println(s);
         }
@@ -220,15 +213,21 @@ public class AppHandler {
       boolean pageTokens = true;
       while (pageTokens) {
         pageTokens = false;
-        for (int i = 0; i<labelRuleIds.size(); i += 2) {
-          System.out.println("Getting messages for "+labelRules.get(i)+" -> "+labelRules.get(i+1));
-          String leftLabelId = labelRuleIds.get(i),
-            rightLabelId = labelRuleIds.get(i+1);
-          Set<String> authors = authorsPerRule.get(i/2);
+        for (int i = 0; i<labelRules.size(); i++) {
+          LabelRules.Rules rules = labelRules.get(i);
+          System.out.println("Getting messages for ("+rules.getMarker()+
+            ") "+
+            rules.getRemove()+
+            " -> "+rules.getDestination());
 
           List<String> toMoveIds = new ArrayList<>();
+          Set<String> authors = authorsPerRule.get(i);
           for (String a : authors) {
-            ListMessagesResponse response = service.users().messages().list(user).setMaxResults((long)500).setQ("in:inbox from:"+a).execute();
+            String query = "from:" + a;
+            if (rules.getQ()!=null) {
+              query += " " + rules.getQ();
+            }
+            ListMessagesResponse response = service.users().messages().list(user).setMaxResults((long)500).setQ(query).execute();
             List<Message> messages = response.getMessages();
             if (messages==null) {
               continue;
@@ -248,8 +247,22 @@ public class AppHandler {
             continue;
           }
           System.out.print("Moving " + toMoveIds.size() + " messages ... ");
+
           BatchModifyMessagesRequest request = new BatchModifyMessagesRequest();
-          request.set("ids",toMoveIds).set("addLabelIds",Collections.singletonList(rightLabelId)).set("removeLabelIds",Collections.unmodifiableList(List.of("INBOX",leftLabelId)));
+          request.set("ids",toMoveIds);
+          if (rules.getDestination()!=null)
+            request.set("addLabelIds",Collections.singletonList(rules.getDestinationId()));
+
+          List<String> removeIds = new ArrayList<>();
+          if (rules.getRemove()!=null)
+            removeIds.add(rules.getRemoveId());
+
+          if (rules.getMarker()!=null)
+            removeIds.add(rules.getMarkerId());
+
+          if (removeIds.size()>0)
+            request.set("removeLabelIds",Collections.unmodifiableList(removeIds));
+
           service.users().messages().batchModify(user,request).execute();
           System.out.println("done\n");
         }
