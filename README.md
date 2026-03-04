@@ -50,7 +50,8 @@ send this selection to the trash
             "save_authors": false,
             "marker": "clean",
             "destination": "kitchen cabinet",
-            "q": "label:kitchen sink"
+            "q": "label:kitchen sink",
+            "remove": "dirty"
         },
         {
             "save_authors": true,
