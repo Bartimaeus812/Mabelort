@@ -36,6 +36,7 @@ save who they are, remember this.
 select all scumbags who are your neighbor and are on the list
 send this selection to the trash
 
+```json
 {
     "label_rules": [
         {
