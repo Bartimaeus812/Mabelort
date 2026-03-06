@@ -7,7 +7,6 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
-import com.google.api.client.json.JsonParser;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.gax.rpc.PermissionDeniedException;
 import com.google.api.services.gmail.Gmail;
@@ -54,7 +53,6 @@ public class AppHandler {
    * If modifying these scopes, delete your previously saved tokens/ folder.
    */
   private static final List<String> SCOPES = Collections.unmodifiableList(List.of(GmailScopes.GMAIL_LABELS, GmailScopes.GMAIL_READONLY, GmailScopes.GMAIL_MODIFY));
-  private static final String CREDENTIALS_FILE_PATH = "/credentials.json";
 
   /**
    * Creates an authorized Credential object.
@@ -105,6 +103,7 @@ public class AppHandler {
       authors.add(authorsIn.nextLine());
     }
     authorsIn.close();
+
     FileWriter authorsOut = new FileWriter(new File("authors/"+id));
     if (keepAuthors) {
       for (String s : authors) {
@@ -148,7 +147,7 @@ public class AppHandler {
       System.out.println(e.getStackTrace());
       System.out.println("Label rules not found\nStopping program...");
       new File("labels.json").createNewFile();
-      System.out.println("Expected format of label rules:\n{\n    \"label_rules\": [\n        {\n            \"save_authors\": false,\n            \"marker\": \"dirty\",\n            \"destination\": \"kitchen sink\",\n            \"q\": \"label:kitchen counter\",\n            \"remove\": \"clean\"\n        },\n        {\n            \"save_authors\": false,\n            \"marker\": \"clean\",\n            \"destination\": \"kitchen cabinet\",\n            \"q\": \"label:kitchen sink\"\n        },\n        {\n            \"save_authors\": true,\n            \"marker\": \"scumbag\",\n            \"destination\": \"TRASH\",\n            \"q\": \"label:neighbor\"\n        }\n    ]\n}");
+      System.out.println("Expected format of label rules:\n{\n    \"label_rules\": [\n        {\n            \"keep_authors\": false,\n            \"marker\": \"dirty\",\n            \"destination\": \"kitchen sink\",\n            \"q\": \"label:kitchen counter\",\n            \"remove\": \"clean\"\n        },\n        {\n            \"keep_authors\": false,\n            \"marker\": \"clean\",\n            \"destination\": \"kitchen cabinet\",\n            \"q\": \"label:kitchen sink\"\n        },\n        {\n            \"keep_authors\": true,\n            \"marker\": \"scumbag\",\n            \"destination\": \"TRASH\",\n            \"q\": \"label:neighbor\"\n        }\n    ]\n}");
       return;
     } catch (RuntimeException e) {
       System.out.println(e.getMessage());

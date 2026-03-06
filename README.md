@@ -7,7 +7,7 @@ Marking
 Messages with a certain label, marker, can be added to an author list
 
 Saving
-This author list will grow as long as the save_authors flag is set
+This author list will grow as long as the keep_authors flag is set
 
 Selecting
 Messages are selected by author and this is filtered by additional queries, q
@@ -32,29 +32,30 @@ send this selection to the kitchen cabinet and make them not dirty
 
 Rule 3
 mark up to 50 scumbags
-save who they are, remember this.
+save who they are
 select all scumbags who are your neighbor and are on the list
 send this selection to the trash
+keep the list of scumbags
 
 ```json
 {
     "label_rules": [
         {
-            "save_authors": false,
+            "keep_authors": false,
             "marker": "dirty",
             "destination": "kitchen sink",
             "q": "label:kitchen counter",
             "remove": "clean"
         },
         {
-            "save_authors": false,
+            "keep_authors": false,
             "marker": "clean",
             "destination": "kitchen cabinet",
             "q": "label:kitchen sink",
             "remove": "dirty"
         },
         {
-            "save_authors": true,
+            "keep_authors": true,
             "marker": "scumbag",
             "destination": "TRASH",
             "q": "label:neighbor"
