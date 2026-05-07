@@ -3,8 +3,12 @@ import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInsta
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
+import com.google.api.client.googleapis.batch.BatchRequest;
+import com.google.api.client.googleapis.batch.json.JsonBatchCallback;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.http.HttpHeaders;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
@@ -173,11 +177,29 @@ public class AppHandler {
             continue;
           }
           //write authors found in messages to file
+          BatchRequest batch = service.batch();
+          List<String> authors = new ArrayList<String>();
+          JsonBatchCallback<Message> callback = new JsonBatchCallback<Message>() {
+            @Override
+            public void onSuccess(Message message, HttpHeaders responseHeaders) {
+              String author = message.getPayload().getHeaders().get(0).getValue();
+              synchronized (authors) {
+                authors.add(author);
+              }
+            }
+
+            @Override
+            public void onFailure(GoogleJsonError e, HttpHeaders responseHeaders) throws IOException {}
+          };
           for (Message m : messages) {
             String id = m.getId();
-            System.out.print("Getting message "+id+" ... ");
-            Message message = service.users().messages().get(user,id).setFormat("METADATA").setMetadataHeaders(Collections.singletonList("From")).execute();
-            String author = message.getPayload().getHeaders().get(0).getValue();
+            service.users().messages().get(user,id).setFormat("METADATA").setMetadataHeaders(Collections.singletonList("From"))
+              .queue(batch, callback);
+          }
+          if (batch.size()>0) {
+            batch.execute();
+          }
+          for (String author : authors) {
             System.out.println(author);
             writeAuthors.append(author+"\n");
           }
@@ -221,13 +243,34 @@ public class AppHandler {
 
           List<String> toMoveIds = new ArrayList<>();
           Set<String> authors = authorsPerRule.get(i);
+
+          BatchRequest batch = service.batch();
+          List<List<Message>> messagesList = new ArrayList<List<Message>>();
+          JsonBatchCallback<ListMessagesResponse> callback = new JsonBatchCallback<ListMessagesResponse>() {
+            @Override
+            public void onSuccess(ListMessagesResponse response, HttpHeaders responseHeaders) {
+              List<Message> messages = response.getMessages();
+              synchronized (messagesList) {
+                messagesList.add(messages);
+              }
+            }
+
+            @Override
+            public void onFailure(GoogleJsonError e, HttpHeaders responseHeaders) throws IOException {}
+          };
+
           for (String a : authors) {
             String query = "from:" + a;
             if (rules.getQ()!=null) {
               query += " " + rules.getQ();
             }
-            ListMessagesResponse response = service.users().messages().list(user).setMaxResults((long)500).setQ(query).execute();
-            List<Message> messages = response.getMessages();
+            service.users().messages().list(user).setMaxResults((long)500).setQ(query).queue(batch, callback);
+          }
+          if (batch.size()>0) {
+            batch.execute();
+          }
+
+          for (List<Message> messages : messagesList) {
             if (messages==null) {
               continue;
             }
@@ -238,7 +281,6 @@ public class AppHandler {
               }
               String id = message.getId();
               toMoveIds.add(id);
-              System.out.println(id);
             }
           }
           if (toMoveIds.size()==0) {
