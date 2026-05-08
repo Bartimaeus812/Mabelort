@@ -195,6 +195,9 @@ public class AppHandler {
             String id = m.getId();
             service.users().messages().get(user,id).setFormat("METADATA").setMetadataHeaders(Collections.singletonList("From"))
               .queue(batch, callback);
+            if (batch.size()>49) {
+              batch.execute();
+            }
           }
           if (batch.size()>0) {
             batch.execute();
@@ -265,6 +268,9 @@ public class AppHandler {
               query += " " + rules.getQ();
             }
             service.users().messages().list(user).setMaxResults((long)500).setQ(query).queue(batch, callback);
+            if (batch.size()>49) {
+              batch.execute();
+            }
           }
           if (batch.size()>0) {
             batch.execute();
