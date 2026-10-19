@@ -13,7 +13,7 @@ public class AccessSecretVersion {
     // TODO(developer): Replace these variables before running the sample.
     String projectId = "gmail-label-sorter-2";
     String secretId = "Developer-Credentials";
-    String versionId = "1";
+    String versionId = "latest";
     return accessSecretVersion(projectId, secretId, versionId);
   }
 
